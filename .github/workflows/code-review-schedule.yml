@@ -1,0 +1,167 @@
+name: Scheduled Code Review
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      base_branch:
+        description: 'Base branch to compare against'
+        required: false
+        default: 'main'
+
+jobs:
+  dependency-check:
+    name: Check for Dependency Updates
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Check for outdated dependencies
+      run: |
+        npm outdated > outdated.txt || true
+        if [ -s outdated.txt ]; then
+          echo "::warning::Outdated dependencies found:"
+          cat outdated.txt
+        else
+          echo "All dependencies are up to date!"
+        fi
+        
+    - name: Run security audit
+      run: npm audit --audit-level=moderate
+      continue-on-error: true
+      
+    - name: Upload audit results
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: security-audit-results
+        path: outdated.txt
+
+  code-quality-report:
+    name: Generate Code Quality Report
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Generate code stats
+      run: |
+        echo "## Code Statistics" > code-stats.md
+        echo "" >> code-stats.md
+        echo "### Total Files" >> code-stats.md
+        find . -type f \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" -not -path "./.next/*" | wc -l | xargs echo "- TypeScript/TSX files:" >> code-stats.md
+        echo "" >> code-stats.md
+        echo "### Lines of Code" >> code-stats.md
+        find . -type f \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" -not -path "./.next/*" -exec wc -l {} + | tail -1 | xargs echo "- Total lines:" >> code-stats.md
+        echo "" >> code-stats.md
+        echo "### Recent Commits" >> code-stats.md
+        git log --oneline --since="1 week ago" | wc -l | xargs echo "- Commits in the last week:" >> code-stats.md
+        
+    - name: Post report as issue comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const stats = fs.readFileSync('code-stats.md', 'utf8');
+          
+          // Find or create a weekly report issue
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: 'weekly-report',
+            state: 'open'
+          });
+          
+          const reportBody = `## Weekly Code Review Report
+          
+          ${stats}
+          
+          ---
+          *Generated on: ${new Date().toISOString()}*
+          `;
+          
+          if (issues.data.length === 0) {
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Weekly Code Review - ${new Date().toISOString().split('T')[0]}`,
+              body: reportBody,
+              labels: ['weekly-report', 'automated']
+            });
+          } else {
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issues.data[0].number,
+              body: reportBody
+            });
+          }
+
+  stale-pr-check:
+    name: Check for Stale PRs
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Find stale PRs
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: prs } = await github.rest.pulls.list({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open'
+          });
+          
+          const now = new Date();
+          const staleThreshold = 7 * 24 * 60 * 60 * 1000; // 7 days
+          
+          const stalePRs = prs.filter(pr => {
+            const updated = new Date(pr.updated_at);
+            return (now - updated) > staleThreshold;
+          });
+          
+          if (stalePRs.length > 0) {
+            console.log(`Found ${stalePRs.length} stale PR(s):`);
+            for (const pr of stalePRs) {
+              console.log(`- #${pr.number}: ${pr.title}`);
+              
+              // Add stale label and comment
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['stale']
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: '⚠️ This PR has been inactive for over 7 days. Please update or close if no longer needed.'
+              });
+            }
+          } else {
+            console.log('No stale PRs found!');
+          }

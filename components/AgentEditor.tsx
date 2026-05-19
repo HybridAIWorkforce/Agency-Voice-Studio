@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Agent, AgentTool, GHLConfig, CustomVoice } from '../types';
-import { VOICES } from '../constants';
+import { Agent, AgentTool, GHLConfig, CustomVoice } from '../types/index';
+import { VOICES } from '../constants/index';
 import { generateSpeech } from '../services/geminiService';
 import WaveformDisplay from './WaveformDisplay';
 import Controls from './Controls';

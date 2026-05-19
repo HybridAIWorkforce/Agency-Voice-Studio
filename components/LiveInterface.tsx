@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { LIVE_INPUT_SAMPLE_RATE, LIVE_OUTPUT_SAMPLE_RATE, createPCM16Blob, decodeLiveAudioData } from '../services/liveAudioUtils';
 import { chatWithAgent } from '../services/geminiService';
-import { LiveConnectionState, Agent } from '../types';
+import { LiveConnectionState, Agent } from '../types/index';
 import LiveBarVisualizer from './LiveBarVisualizer';
 
 interface TranscriptItem {
