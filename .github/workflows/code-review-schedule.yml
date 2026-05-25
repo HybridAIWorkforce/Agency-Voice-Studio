@@ -80,7 +80,7 @@ jobs:
         git log --oneline --since="1 week ago" | wc -l | xargs echo "- Commits in the last week:" >> code-stats.md
         
     - name: Post report as issue comment
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       with:
         script: |
           const fs = require('fs');
@@ -125,7 +125,7 @@ jobs:
     
     steps:
     - name: Find stale PRs
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       with:
         script: |
           const { data: prs } = await github.rest.pulls.list({
